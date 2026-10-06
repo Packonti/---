@@ -160,96 +160,86 @@
     </div>
 </div>
 
-<script>
-    const userApiKeyInput = document.getElementById('userApiKey');
-    const imageInput = document.getElementById('imageInput');
-    const preview = document.getElementById('preview');
-    const statusDiv = document.getElementById('status');
-    const archiveBody = document.getElementById('archiveBody');
-    const exportBtn = document.getElementById('exportBtn');
-    const clearBtn = document.getElementById('clearBtn');
+ <script>
+    var userApiKeyInput = document.getElementById('userApiKey');
+    var imageInput = document.getElementById('imageInput');
+    var preview = document.getElementById('preview');
+    var statusDiv = document.getElementById('status');
+    var archiveBody = document.getElementById('archiveBody');
+    var exportBtn = document.getElementById('exportBtn');
+    var clearBtn = document.getElementById('clearBtn');
 
     if (localStorage.getItem('gemini_api_key')) {
         userApiKeyInput.value = localStorage.getItem('gemini_api_key');
     }
-    userApiKeyInput.addEventListener('change', () => {
+    userApiKeyInput.addEventListener('change', function() {
         localStorage.setItem('gemini_api_key', userApiKeyInput.value.trim());
     });
 
-    let archiveData = JSON.parse(localStorage.getItem('scan_archive') || '[]');
+    var archiveData = JSON.parse(localStorage.getItem('scan_archive') || '[]');
     renderArchive();
 
-    imageInput.addEventListener('change', async (e) => {
-        const apiKey = userApiKeyInput.value.trim();
+    imageInput.addEventListener('change', async function(e) {
+        var apiKey = userApiKeyInput.value.trim();
         if (!apiKey) {
             alert("Моля, въведете API ключ най-горе!");
             return;
         }
 
-        const file = e.target.files[0];
+        var file = e.target.files[0];
         if (!file) return;
 
         preview.src = URL.createObjectURL(file);
         preview.style.display = 'inline-block';
-        statusDiv.innerText = "⏳ Сканиране и разбиване по редове...";
+        statusDiv.innerText = "⏳ Обработка...";
 
         try {
-            const base64Image = await fileToBase64(file);
+            var base64Image = await fileToBase64(file);
 
-            const prompt = `Извлечи ВСЕКИ отделен продукт/артикул от снимката. Върни СТРИКТНО JSON обект с ключ "items" (масив от обекти) без никакъв друг текст:
-            {
-              "items": [
-                {
-                  "product_name": "Име на продукта",
-                  "quantity": "Количество/Разфасовка",
-                  "batch_number": "Номер на партида (ако има, иначе N/A)",
-                  "expiry_date": "Срок на годност (ако има, иначе N/A)"
-                }
-              ]
-            }`;
+            var promptText = "Извлечи ВСЕКИ отделен продукт от снимката. Върни СТРИКТНО JSON обект с ключ \"items\" съдържащ масив от продукти без друг текст: {\"items\": [{\"product_name\": \"Име\", \"quantity\": \"Количество\", \"batch_number\": \"Партида или N/A\", \"expiry_date\": \"Срок или N/A\"}]}";
 
-            // Директна заявка към актуалния поддържан модел gemini-3.8-flash
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            // Използваме стабилния модел gemini-2.5-flash
+            var response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     contents: [{
                         parts: [
-                            { text: prompt },
+                            { text: promptText },
                             { inlineData: { mimeType: file.type || "image/jpeg", data: base64Image } }
                         ]
                     }]
                 })
             });
 
-            const data = await response.json();
+            var data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.error?.message || "Грешка от Google API");
+                throw new Error(data.error ? data.error.message : "Грешка при заявката");
             }
 
-            let text = data.candidates[0].content.parts[0].text;
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const parsedJson = JSON.parse(text);
+            var text = data.candidates[0].content.parts[0].text;
+            text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+            var parsedJson = JSON.parse(text);
 
             if (parsedJson && parsedJson.items && Array.isArray(parsedJson.items)) {
-                const now = new Date().toLocaleString('bg-BG');
+                var now = new Date().toLocaleString("bg-BG");
                 
-                parsedJson.items.forEach(item => {
+                parsedJson.items.forEach(function(item) {
                     archiveData.unshift({
                         timestamp: now,
-                        product_name: item.product_name || 'Неизвестен',
-                        quantity: item.quantity || '',
-                        batch_number: item.batch_number || 'N/A',
-                        expiry_date: item.expiry_date || 'N/A'
+                        product_name: item.product_name || "Неизвестен",
+                        quantity: item.quantity || "",
+                        batch_number: item.batch_number || "N/A",
+                        expiry_date: item.expiry_date || "N/A"
                     });
                 });
 
-                localStorage.setItem('scan_archive', JSON.stringify(archiveData));
+                localStorage.setItem("scan_archive", JSON.stringify(archiveData));
                 renderArchive();
-                statusDiv.innerText = `✅ Успешно добавени ${parsedJson.items.length} артикула!`;
+                statusDiv.innerText = "✅ Добавени са " + parsedJson.items.length + " артикула!";
             } else {
-                throw new Error("Неуспешно разпознаване на списъка.");
+                throw new Error("Форматът на отговора е невалиден.");
             }
 
         } catch (error) {
@@ -259,59 +249,60 @@
     });
 
     function renderArchive() {
-        archiveBody.innerHTML = '';
-        archiveData.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.timestamp}</td>
-                <td><strong>${item.product_name}</strong></td>
-                <td>${item.quantity}</td>
-                <td>${item.batch_number}</td>
-                <td>${item.expiry_date}</td>
-            `;
+        archiveBody.innerHTML = "";
+        archiveData.forEach(function(item) {
+            var tr = document.createElement("tr");
+            tr.innerHTML = "<td>" + item.timestamp + "</td>" +
+                "<td><strong>" + item.product_name + "</strong></td>" +
+                "<td>" + item.quantity + "</td>" +
+                "<td>" + item.batch_number + "</td>" +
+                "<td>" + item.expiry_date + "</td>";
             archiveBody.appendChild(tr);
         });
     }
 
-    exportBtn.addEventListener('click', () => {
+    exportBtn.addEventListener('click', function() {
         if (archiveData.length === 0) {
             alert("Архивът е празен!");
             return;
         }
 
-        const worksheetData = archiveData.map(item => ({
-            "Дата/Час": item.timestamp,
-            "Продукт": item.product_name,
-            "Количество": item.quantity,
-            "Партида": item.batch_number,
-            "Срок на годност": item.expiry_date
-        }));
+        var worksheetData = archiveData.map(function(item) {
+            return {
+                "Дата/Час": item.timestamp,
+                "Продукт": item.product_name,
+                "Количество": item.quantity,
+                "Партида": item.batch_number,
+                "Срок на годност": item.expiry_date
+            };
+        });
 
-        const worksheet = XLSX.utils.json_to_sheet(worksheetData);
-        const workbook = XLSX.utils.book_new();
+        var worksheet = XLSX.utils.json_to_sheet(worksheetData);
+        var workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Входящ Контрол");
 
-        const fileName = `Vhodasht_Kontrol_${new Date().toISOString().slice(0,10)}.xlsx`;
+        var fileName = "Vhodasht_Kontrol_" + new Date().toISOString().slice(0, 10) + ".xlsx";
         XLSX.writeFile(workbook, fileName);
     });
 
-    clearBtn.addEventListener('click', () => {
-        if (confirm("Сигурни ли сте, че искате да изчистите целия архив?")) {
+    clearBtn.addEventListener('click', function() {
+        if (confirm("Изчистване на архива?")) {
             archiveData = [];
-            localStorage.removeItem('scan_archive');
+            localStorage.removeItem("scan_archive");
             renderArchive();
         }
     });
 
     function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = error => reject(error);
+        return new Promise(function(resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function() { resolve(reader.result.split(',')[1]); };
+            reader.onerror = function(error) { reject(error); };
             reader.readAsDataURL(file);
         });
     }
 </script>
+
 
 </body>
 </html>
